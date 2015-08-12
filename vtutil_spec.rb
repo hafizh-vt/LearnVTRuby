@@ -2,14 +2,31 @@ require "spec_helper"
 require_relative "vt_util"
 require_relative "payloads"
 
-RSpec.shared_examples "papi response validation" do |status_code, transaction_status, expected_payload|
-  it "expect valid response" do
+RSpec.shared_examples "charge: generic papi response validation" do |status_code, status_message, payment_type, transaction_status, payload|
+  let(:payload) {payload}
+
+  it "should has valid status code" do
     expect(response["status_code"].to_i).to eq(status_code)
-    expect(response["status_message"]).to start_with("Success")
-    expect(response["order_id"]).to eq(expected_payload[:transaction_details][:order_id])
-    expect(response["payment_type"]).to eq(expected_payload[:payment_type])
+  end
+
+  it "status message should indicates success" do
+    expect(response["status_message"]).to start_with(status_message)
+  end
+
+  it "payment type should match" do
+    expect(response["payment_type"]).to eq(payment_type)
+  end
+
+  it "transaction status should match" do
     expect(response["transaction_status"]).to eq(transaction_status)
-    expect(response["gross_amount"].to_i).to eq(expected_payload[:transaction_details][:gross_amount])
+  end
+
+  it "gross amount should match" do
+    expect(response["gross_amount"].to_i).to eq(payload[:transaction_details][:gross_amount])
+  end
+
+  it "order id should match" do
+  expect(response["order_id"]).to eq(payload[:transaction_details][:order_id])
   end
 
   it { should have_key("transaction_id") }
@@ -22,9 +39,7 @@ describe VtUtil do
   end
 
   describe ".charge" do
-
-    let(:payload) {VTWEB_PAYLOAD}
-    let(:response) {@response}
+    let(:response) { @response }
     subject { @response }
 
     before do
@@ -32,61 +47,43 @@ describe VtUtil do
       @response = vt_util.charge payload: payload
     end
 
-    describe "VT-Web transaction" do
-
+    describe "vt-web transaction" do
+      let(:payload) { VTWEB_PAYLOAD }
       it "should charge with method VT-WEB" do
         expect(response["status_code"].to_i).to eq(201)
         expect(response["status_message"]).to start_with("OK")
         expect(response["redirect_url"]).to match(/https:\/\/vtweb\..*\/vtweb\/.*/)
       end
-
     end
 
-    describe "bank transfer transaction", :focus do
-      let(:payload) {BANK_TRANSFER_PAYLOAD}
-
-      include_examples "papi response validation", 201, "pending", BANK_TRANSFER_PAYLOAD
-
-
-      it "should charge with method bank transfer" do
-        expect(response["transaction_status"]).to eq("pending")
-        expect(response["permata_va_number"]).to_not be_nil
-      end
+    describe "bank transfer transaction" do
+      let(:payload) { BANK_TRANSFER_PAYLOAD }
+      include_examples "charge: generic papi response validation", 201, "Success", "bank_transfer", "pending", BANK_TRANSFER_PAYLOAD
+      it { should have_key("permata_va_number") }
     end
 
     describe "mandiri click pay transaction" do
-      let(:payload) {MANDIRI_CLICKPAY_PAYLOAD}
-
-      include_examples "papi response validation", 200, "settlement", MANDIRI_CLICKPAY_PAYLOAD
-      
-      it "should contains approval_code" do
-        expect(response["approval_code"]).to_not be_nil
-      end
+      let(:payload) { MANDIRI_CLICKPAY_PAYLOAD }
+      include_examples "charge: generic papi response validation", 200, "Success", "mandiri_clickpay", "settlement", MANDIRI_CLICKPAY_PAYLOAD
+      it { should have_key("approval_code") }
     end
 
-    it "should charge with method BCA klik pay" do
-      vt_util = VtUtil.new
-      response = vt_util.charge payload: BCA_KLIKPAY_PAYLOAD
-      expect(response["status_code"].to_i).to eq(201)
-      expect(response["status_message"]).to start_with("OK")
-      expect(response["redirect_url"]).to_not be_nil
-      expect(response["transaction_id"]).to_not be_nil
-      expect(response["order_id"]).to eq(BCA_KLIKPAY_PAYLOAD[:transaction_details][:order_id])
-      expect(response["payment_type"]).to eq(BCA_KLIKPAY_PAYLOAD[:payment_type])
-      expect(response["transaction_status"]).to eq("pending")
-      expect(response["gross_amount"].to_i).to eq(BCA_KLIKPAY_PAYLOAD[:transaction_details][:gross_amount])
+    describe "should charge with method BCA klik pay" do
+      let(:payload) { BCA_KLIKPAY_PAYLOAD }
+      include_examples "charge: generic papi response validation", 201, "OK", "bca_klikpay", "pending", BCA_KLIKPAY_PAYLOAD
+      it { should have_key("redirect_url") }
     end
 
   end
 
-  describe "Dependent Functions" do
+  describe "Dependent Methods" do
     before do
       @vt_util = VtUtil.new
       @response = @vt_util.charge payload: BCA_KLIKPAY_PAYLOAD
     end
 
     describe ".status" do
-      it "should be able to check transaction status using transaction id" do
+      it "should be able to check transaction status using transaction id", :focus do
         resp = @vt_util.status @response["transaction_id"]
         expect(resp["status_code"].to_i).to eq(201)
         expect(resp["transaction_status"]).to eq("pending")
