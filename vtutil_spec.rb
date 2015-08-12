@@ -26,7 +26,7 @@ RSpec.shared_examples "charge: generic papi response validation" do |status_code
   end
 
   it "order id should match" do
-  expect(response["order_id"]).to eq(payload[:transaction_details][:order_id])
+    expect(response["order_id"]).to eq(payload[:transaction_details][:order_id])
   end
 
   it { should have_key("transaction_id") }
@@ -57,23 +57,98 @@ describe VtUtil do
     end
 
     describe "bank transfer transaction" do
-      let(:payload) { BANK_TRANSFER_PAYLOAD }
-      include_examples "charge: generic papi response validation", 201, "Success", "bank_transfer", "pending", BANK_TRANSFER_PAYLOAD
-      it { should have_key("permata_va_number") }
+      describe "permata va transaction" do
+        let(:payload) { PERMATA_VA_PAYLOAD }
+        include_examples "charge: generic papi response validation", 201, "Success", "bank_transfer", "pending", PERMATA_VA_PAYLOAD
+        it { should have_key("permata_va_number") }
+      end
+
+      describe "mandiri bill payment" do
+        let(:payload) { MANDIRI_BILL_PAYMENT_PAYLOAD }
+        include_examples "charge: generic papi response validation", 201, "Success", "echannel", "pending", MANDIRI_BILL_PAYMENT_PAYLOAD
+        it { should have_key("biller_code") }
+        it { should have_key("bill_key") }
+      end
     end
 
-    describe "mandiri click pay transaction" do
-      let(:payload) { MANDIRI_CLICKPAY_PAYLOAD }
-      include_examples "charge: generic papi response validation", 200, "Success", "mandiri_clickpay", "settlement", MANDIRI_CLICKPAY_PAYLOAD
-      it { should have_key("approval_code") }
+    describe "direct debit transaction" do
+      describe "mandiri click pay transaction" do
+        let(:payload) { MANDIRI_CLICKPAY_PAYLOAD }
+        include_examples "charge: generic papi response validation", 200, "Success", "mandiri_clickpay", "settlement", MANDIRI_CLICKPAY_PAYLOAD
+        it { should have_key("approval_code") }
+        it { should have_key("masked_card") }
+      end
+
+      describe "cimb clicks transaction" do
+        let(:payload) { CIMB_CLICKS_PAYLOAD }
+        include_examples "charge: generic papi response validation", 201, "Success", "cimb_clicks", "pending", CIMB_CLICKS_PAYLOAD
+        it { should have_key("redirect_url") }
+      end
+
+      describe "epay bri transaction" do
+        let(:payload) { EPAY_BRI_PAYLOAD }
+        include_examples "charge: generic papi response validation", 201, "Success", "bri_epay", "pending", EPAY_BRI_PAYLOAD
+        it { should have_key("redirect_url") }
+      end
+
+      describe "BCA klik pay transaction" do
+        let(:payload) { BCA_KLIKPAY_PAYLOAD }
+        include_examples "charge: generic papi response validation", 201, "OK", "bca_klikpay", "pending", BCA_KLIKPAY_PAYLOAD
+        it { should have_key("redirect_url") }
+      end
     end
 
-    describe "should charge with method BCA klik pay" do
-      let(:payload) { BCA_KLIKPAY_PAYLOAD }
-      include_examples "charge: generic papi response validation", 201, "OK", "bca_klikpay", "pending", BCA_KLIKPAY_PAYLOAD
-      it { should have_key("redirect_url") }
+    describe "e-wallet transaction" do
+      describe "telkomsel tcash transaction" do
+        let(:payload) { TCASH_PAYLOAD }
+        include_examples "charge: generic papi response validation", 200, "Success", "telkomsel_cash", "settlement", TCASH_PAYLOAD
+      end
+
+      describe "xl tunai transaction" do
+        let(:payload) { XL_TUNAI_PAYLOAD }
+        include_examples "charge: generic papi response validation", 201, "Success", "xl_tunai", "pending", XL_TUNAI_PAYLOAD
+        it { should have_key("xl_tunai_order_id") }
+        it { should have_key("xl_tunai_merchant_id") }
+      end
+
+      describe "bbm money transaction" do
+        let(:payload) { BBM_MONEY_PAYLOAD }
+        include_examples "charge: generic papi response validation", 201, "Success", "bbm_money", "pending", BBM_MONEY_PAYLOAD
+        it { should have_key("permata_va_number") }
+      end
+
+      describe "indosat dompetku transaction" do
+        let(:payload) { INDOSAT_DOMPETKU_PAYLOAD }
+        include_examples "charge: generic papi response validation", 200, "Success", "indosat_dompetku", "settlement", INDOSAT_DOMPETKU_PAYLOAD
+      end
     end
 
+    describe "convenience store transaction" do
+      describe "indomaret transaction" do
+        let(:payload) { INDOMARET_PAYLOAD }
+        include_examples "charge: generic papi response validation", 201, "Success", "cstore", "pending", INDOMARET_PAYLOAD
+        it { should have_key("payment_code") }
+      end
+    end
+
+  end
+
+  RSpec.shared_examples "dependent methods: generic papi response validation" do |status_code, transaction_status|
+    before do
+      @resp = @vt_util.status @response["transaction_id"]
+    end
+
+    it "status code should indicates transaction success" do
+      expect(@resp["status_code"].to_i).to eq(status_code)
+    end
+
+    it "transaction status should match" do
+      expect(@resp["transaction_status"]).to eq(transaction_status)
+    end
+
+    it "transaction id should match" do
+      expect(@resp["transaction_id"]).to eq(@response["transaction_id"])
+    end
   end
 
   describe "Dependent Methods" do
@@ -83,11 +158,9 @@ describe VtUtil do
     end
 
     describe ".status" do
-      it "should be able to check transaction status using transaction id", :focus do
-        resp = @vt_util.status @response["transaction_id"]
-        expect(resp["status_code"].to_i).to eq(201)
-        expect(resp["transaction_status"]).to eq("pending")
-        expect(resp["transaction_id"]).to eq(@response["transaction_id"])
+
+      describe "should be able to check transaction status using transaction id" do
+        include_examples "dependent methods: generic papi response validation", 201, "pending"
       end
 
       it "should be able to check transaction status using order id" do
@@ -99,32 +172,32 @@ describe VtUtil do
     end
 
     describe ".expire" do
-      it "should be able to set transaction status to expired" do
-        resp = @vt_util.expire @response["transaction_id"]
-        expect(resp["status_code"].to_i).to eq(407)
-        expect(resp["transaction_status"]).to eq("expire")
-        expect(resp["transaction_id"]).to eq(@response["transaction_id"])
-
-        resp = @vt_util.status @response["transaction_id"]
-        expect(resp["status_code"].to_i).to eq(407)
-        expect(resp["transaction_status"]).to eq("expire")
-        expect(resp["transaction_id"]).to eq(@response["transaction_id"])
+      before do
+        @resp = @vt_util.expire @response["transaction_id"]
       end
+
+      it "return valid response" do
+        expect(@resp["status_code"].to_i).to eq(407)
+        expect(@resp["transaction_status"]).to eq("expire")
+        expect(@resp["transaction_id"]).to eq(@response["transaction_id"])
+      end
+
+      include_examples "dependent methods: generic papi response validation", 407, "expire"
     end
 
-    describe ".cancel" do
-      it "should be able to cancel transaction" do
-        resp = @vt_util.cancel @response["transaction_id"]
-        expect(resp["status_code"].to_i).to eq(200)
-        expect(resp["status_message"]).to start_with("Success")
-        expect(resp["transaction_status"]).to eq("cancel")
-        expect(resp["transaction_id"]).to eq(@response["transaction_id"])
-
-        resp = @vt_util.status @response["transaction_id"]
-        expect(resp["status_code"].to_i).to eq(200)
-        expect(resp["transaction_status"]).to eq("cancel")
-        expect(resp["transaction_id"]).to eq(@response["transaction_id"])
+    describe ".cancel", :focus do
+      before do
+        @resp = @vt_util.cancel @response["transaction_id"]
       end
+
+      it "return valid response" do
+        expect(@resp["status_code"].to_i).to eq(200)
+        expect(@resp["status_message"]).to start_with("Success")
+        expect(@resp["transaction_status"]).to eq("cancel")
+        expect(@resp["transaction_id"]).to eq(@response["transaction_id"])
+      end
+
+      include_examples "dependent methods: generic papi response validation", 200, "cancel"
     end
   end
 
